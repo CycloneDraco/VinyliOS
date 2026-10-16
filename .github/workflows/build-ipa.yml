@@ -1,0 +1,112 @@
+name: Build IPA
+
+# Builds an unsigned Vinyl.ipa. Sign and install it with Sideloadly or
+# AltStore using your own (free) Apple ID; they re-sign the app and its
+# Live Activity extension for your device.
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write # to publish the .ipa as a release
+
+jobs:
+  ipa:
+    name: iOS app
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Select Xcode 16.4
+        run: |
+          sudo xcode-select -s /Applications/Xcode_16.4.app/Contents/Developer \
+            || echo "::warning::Xcode 16.4 not found; using the image default"
+          xcodebuild -version
+
+      - name: Generate the Xcode project
+        run: |
+          brew install xcodegen
+          xcodegen generate
+
+      - name: Build (unsigned)
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project Vinyl.xcodeproj \
+            -scheme Vinyl \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination "generic/platform=iOS" \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            build > build.log 2>&1 || true
+          grep -E "error:|BUILD (SUCCEEDED|FAILED)" build.log || true
+          grep -q '\*\* BUILD SUCCEEDED \*\*' build.log
+
+      - name: Show build errors
+        if: failure()
+        run: grep -n -B2 -A8 "error:" build.log | head -300 || tail -150 build.log
+
+      - uses: actions/upload-artifact@v6
+        if: failure()
+        with:
+          name: build-log
+          path: build.log
+
+      - name: Package IPA
+        run: |
+          set -euo pipefail
+          APP=build/Build/Products/Release-iphoneos/Vinyl.app
+          test -f "$APP/Renderer/index.html"
+          test -f "$APP/Renderer/vendor/three/three.module.min.js"
+          test -d "$APP/PlugIns/VinylWidgets.appex"
+          plutil -p "$APP/Info.plist" | grep -E "CFBundleIdentifier|CFBundleShortVersionString|NSSupportsLiveActivities|MinimumOSVersion"
+          rm -rf Payload dist && mkdir -p Payload dist
+          ditto "$APP" Payload/Vinyl.app
+          zip -qry dist/Vinyl.ipa Payload
+          (cd dist && shasum -a 256 Vinyl.ipa | tee SHA256SUMS.txt)
+          ls -la dist
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: Vinyl-ipa
+          path: |
+            dist/Vinyl.ipa
+            dist/SHA256SUMS.txt
+
+      # Every push to main publishes "Vinyl for iOS 1.0.0 (build N)" with the
+      # .ipa attached, so the newest one is always on the Releases page.
+      - name: Release metadata
+        id: meta
+        if: github.event_name == 'push'
+        run: |
+          set -euo pipefail
+          VERSION=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' build/Build/Products/Release-iphoneos/Vinyl.app/Info.plist)
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            echo "tag=$GITHUB_REF_NAME" >> "$GITHUB_OUTPUT"
+            echo "name=Vinyl for iOS ${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=ios-v${VERSION}-build.${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
+            echo "name=Vinyl for iOS ${VERSION} (build ${GITHUB_RUN_NUMBER})" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Release
+        if: steps.meta.outcome == 'success'
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ steps.meta.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          name: ${{ steps.meta.outputs.name }}
+          body: |
+            Unsigned build of `${{ github.sha }}`. Install it with Sideloadly or AltStore; see the README for the steps.
+          fail_on_unmatched_files: true
+          make_latest: true
+          files: |
+            dist/Vinyl.ipa
+            dist/SHA256SUMS.txt
