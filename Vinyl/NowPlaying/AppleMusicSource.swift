@@ -114,6 +114,25 @@ final class AppleMusicSource {
         refreshSoon()
     }
 
+    /// Queues an album from the Music library and plays it from track 1.
+    /// False when it's no longer in the library.
+    func playAlbum(persistentID: UInt64) -> Bool {
+        guard let player else { return false }
+        let query = MPMediaQuery.songs()
+        query.addFilterPredicate(MPMediaPropertyPredicate(
+            value: NSNumber(value: persistentID),
+            forProperty: MPMediaItemPropertyAlbumPersistentID
+        ))
+        guard let items = query.items, !items.isEmpty else { return false }
+        let ordered = items.sorted {
+            ($0.discNumber, $0.albumTrackNumber) < ($1.discNumber, $1.albumTrackNumber)
+        }
+        player.setQueue(with: MPMediaItemCollection(items: ordered))
+        player.play()
+        refreshSoon()
+        return true
+    }
+
     func seek(to seconds: TimeInterval) {
         player?.currentPlaybackTime = seconds
         refreshSoon()
@@ -135,7 +154,8 @@ final class AppleMusicSource {
             albumArtist: item.albumArtist,
             duration: item.playbackDuration > 0 ? item.playbackDuration : nil,
             source: .appleMusic,
-            artworkURL: nil
+            artworkURL: nil,
+            albumURI: item.albumPersistentID != 0 ? "am-album:\(item.albumPersistentID)" : nil
         )
     }
 }

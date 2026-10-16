@@ -25,6 +25,9 @@ There are no usage limits or accounts beyond your own Spotify login.
 - **Apple Music** playing in the Music app on the same device.
 - **Controls**: tap the screen to show them, tap the record to play or pause,
   swipe sideways to skip, and drag the progress bar to seek.
+- **Crate**: a searchable grid of the albums you've played in Vinyl (up to 300)
+  and your saved Spotify albums. Tap a cover to play that album from track 1.
+  Starting Spotify albums needs Premium.
 - **Always-on display**: keeps the screen awake, dims for night-time, shows an
   optional clock, and nudges the image every few minutes to protect OLED
   screens from burn-in.

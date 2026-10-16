@@ -16,6 +16,7 @@ enum SpotifyConfig {
         "user-read-playback-state",
         "user-read-currently-playing",
         "user-modify-playback-state",
+        "user-library-read", // saved albums, for the Crate
     ]
 }
 
@@ -23,6 +24,8 @@ struct SpotifyTokens: Codable {
     var accessToken: String
     var refreshToken: String
     var expiresAt: Date
+    /// Space-separated scopes Spotify granted. Nil for logins from before 1.1.
+    var scope: String?
 }
 
 enum SpotifyAuthError: LocalizedError {
@@ -47,6 +50,8 @@ final class SpotifyAuth: NSObject, ObservableObject {
     static let shared = SpotifyAuth()
 
     @Published private(set) var isConnected = false
+    /// Whether the login covers saved albums (logins from 1.0 don't; reconnecting fixes it).
+    @Published private(set) var canReadLibrary = false
     @Published var accountName: String? {
         didSet { UserDefaults.standard.set(accountName, forKey: "spotifyAccountName") }
     }
@@ -55,6 +60,7 @@ final class SpotifyAuth: NSObject, ObservableObject {
     private var tokens: SpotifyTokens? {
         didSet {
             isConnected = tokens != nil
+            canReadLibrary = tokens?.scope?.split(separator: " ").contains("user-library-read") ?? false
             if let tokens, let data = try? JSONEncoder().encode(tokens) {
                 Keychain.write(data, for: "spotify")
             } else {
@@ -70,6 +76,9 @@ final class SpotifyAuth: NSObject, ObservableObject {
         super.init()
         if let data = Keychain.read("spotify"), let saved = try? JSONDecoder().decode(SpotifyTokens.self, from: data) {
             tokens = saved
+            // (didSet doesn't run for assignments in the class's own initializer.)
+            isConnected = true
+            canReadLibrary = saved.scope?.split(separator: " ").contains("user-library-read") ?? false
         }
         accountName = UserDefaults.standard.string(forKey: "spotifyAccountName")
     }
@@ -119,6 +128,7 @@ final class SpotifyAuth: NSObject, ObservableObject {
         refreshTask = nil
         tokens = nil
         accountName = nil
+        SpotifyLibrary.shared.reset()
     }
 
     private func authenticate(url: URL) async throws -> URL {
@@ -158,7 +168,9 @@ final class SpotifyAuth: NSObject, ObservableObject {
                     "refresh_token": refreshToken,
                     "client_id": SpotifyConfig.clientID,
                 ], keepingRefreshToken: refreshToken)
-                self.tokens = fresh
+                var updated = fresh
+                updated.scope = fresh.scope ?? self.tokens?.scope
+                self.tokens = updated
                 return fresh.accessToken
             } catch SpotifyAuthError.denied(let reason) {
                 // Refresh token revoked or expired: the user has to log in again.
@@ -189,6 +201,7 @@ final class SpotifyAuth: NSObject, ObservableObject {
             let access_token: String?
             let refresh_token: String?
             let expires_in: Double?
+            let scope: String?
             let error: String?
             let error_description: String?
         }
@@ -206,7 +219,8 @@ final class SpotifyAuth: NSObject, ObservableObject {
         return SpotifyTokens(
             accessToken: access,
             refreshToken: refresh,
-            expiresAt: Date().addingTimeInterval(reply?.expires_in ?? 3600)
+            expiresAt: Date().addingTimeInterval(reply?.expires_in ?? 3600),
+            scope: reply?.scope
         )
     }
 

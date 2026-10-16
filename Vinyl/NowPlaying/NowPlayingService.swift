@@ -245,11 +245,14 @@ final class NowPlayingService: ObservableObject {
             key: track.albumKey,
             title: track.album.isEmpty ? track.title : track.album,
             artist: track.albumArtist ?? track.artist,
-            artworkFile: artworkFile
+            artworkFile: artworkFile,
+            albumURI: track.albumURI ?? recent.first { $0.key == track.albumKey }?.albumURI,
+            lastPlayed: Date()
         )
         var list = recent.filter { $0.key != album.key }
         list.insert(album, at: 0)
-        recent = Array(list.prefix(12))
+        // The Crate's history; matches the artwork cache's 300 covers.
+        recent = Array(list.prefix(300))
         if let data = try? JSONEncoder().encode(recent) {
             UserDefaults.standard.set(data, forKey: "recentAlbums")
         }
@@ -286,6 +289,32 @@ final class NowPlayingService: ObservableObject {
             try? await Task.sleep(nanoseconds: 450_000_000)
             if spotifyTask != nil { pollSpotifySoon() } else { _ = await pollSpotify() }
         }
+    }
+
+    /// Plays a whole album from track 1. `uri` is a `Track.albumURI`.
+    /// Returns false (and sets `notice`) when it couldn't.
+    @discardableResult
+    func playAlbum(uri: String) async -> Bool {
+        if uri.hasPrefix("spotify:") {
+            do {
+                try await SpotifyAPI.shared.play(contextURI: uri)
+            } catch {
+                notice = error.localizedDescription
+                return false
+            }
+            try? await Task.sleep(nanoseconds: 600_000_000)
+            if spotifyTask != nil { pollSpotifySoon() } else { _ = await pollSpotify() }
+            return true
+        }
+        if uri.hasPrefix("am-album:"), let id = UInt64(uri.dropFirst("am-album:".count)) {
+            if !appleMusic.isRunning { appleMusic.start() }
+            guard appleMusic.playAlbum(persistentID: id) else {
+                notice = "That album isn't in your Apple Music library any more."
+                return false
+            }
+            return true
+        }
+        return false
     }
 
     func seek(to seconds: TimeInterval) async {

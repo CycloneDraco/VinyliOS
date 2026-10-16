@@ -9,8 +9,13 @@ struct RootView: View {
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+    enum Sheet: String, Identifiable {
+        case settings, crate
+        var id: String { rawValue }
+    }
+
     @State private var showControls = false
-    @State private var showSettings = false
+    @State private var sheet: Sheet?
     @State private var hideTask: Task<Void, Never>?
     @State private var shift = CGSize.zero
 
@@ -35,13 +40,14 @@ struct RootView: View {
                 .allowsHitTesting(false)
 
             if !nowPlaying.hasAnySource {
-                OnboardingCard(openSettings: { showSettings = true })
+                OnboardingCard(openSettings: { sheet = .settings })
                     .transition(.opacity.combined(with: .scale(scale: 0.97)))
             }
 
-            ControlsOverlay(visible: showControls, openSettings: {
-                showSettings = true
-            }, interacted: scheduleHide)
+            ControlsOverlay(visible: showControls,
+                            openCrate: { sheet = .crate },
+                            openSettings: { sheet = .settings },
+                            interacted: scheduleHide)
             .opacity(showControls ? 1 : 0)
             .allowsHitTesting(showControls)
 
@@ -69,11 +75,16 @@ struct RootView: View {
         )
         .statusBarHidden(true)
         .persistentSystemOverlays(.hidden)
-        .sheet(isPresented: $showSettings) {
-            SettingsView()
-                .environmentObject(prefs)
-                .environmentObject(nowPlaying)
-                .environmentObject(spotify)
+        .sheet(item: $sheet) { which in
+            Group {
+                switch which {
+                case .settings: SettingsView()
+                case .crate: CrateView()
+                }
+            }
+            .environmentObject(prefs)
+            .environmentObject(nowPlaying)
+            .environmentObject(spotify)
         }
         .onAppear {
             applyPhase(scenePhase)

@@ -30,6 +30,8 @@ struct Track: Equatable, Codable {
     var source: PlayerSource
     /// Cover art URL straight from the player's API (Spotify), when known.
     var artworkURL: URL?
+    /// What plays the whole album: `spotify:album:…` or `am-album:<persistent ID>`.
+    var albumURI: String? = nil
 
     /// Identifies the album, used to cache artwork and build the recent stack.
     var albumKey: String {
@@ -67,11 +69,14 @@ struct PlayerSnapshot: Equatable {
     }
 }
 
-/// An album shown in the recently-played stack.
+/// An album played in Vinyl: the 3D scenes' sleeve stack and the Crate.
 struct RecentAlbum: Codable, Equatable, Identifiable {
     var key: String
     var title: String
     var artist: String
     var artworkFile: String
+    /// Plays the album from the start (see `Track.albumURI`). Older entries lack it.
+    var albumURI: String?
+    var lastPlayed: Date?
     var id: String { key }
 }

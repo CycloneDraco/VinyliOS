@@ -4,14 +4,23 @@ import SwiftUI
 struct ControlsOverlay: View {
     @EnvironmentObject private var nowPlaying: NowPlayingService
     let visible: Bool
+    let openCrate: () -> Void
     let openSettings: () -> Void
     /// Any touch here keeps the overlay up a little longer.
     let interacted: () -> Void
 
     var body: some View {
         VStack {
-            HStack {
+            HStack(spacing: 12) {
                 Spacer()
+                Button(action: { interacted(); openCrate() }) {
+                    Label("Crate", systemImage: "square.grid.2x2.fill")
+                        .font(.headline)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 11)
+                        .background(.ultraThinMaterial, in: Capsule())
+                }
+                .accessibilityLabel("Crate: your albums")
                 Button(action: { interacted(); openSettings() }) {
                     Image(systemName: "gearshape.fill")
                         .font(.title3)

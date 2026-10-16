@@ -236,7 +236,8 @@ enum RendererPayload {
         } else {
             state["track"] = NSNull()
         }
-        state["recent"] = nowPlaying.recent.map { album -> [String: Any] in
+        // The scenes show a handful of sleeves; the rest of the history is for the Crate.
+        state["recent"] = nowPlaying.recent.prefix(6).map { album -> [String: Any] in
             [
                 "id": album.key,
                 "title": album.title,

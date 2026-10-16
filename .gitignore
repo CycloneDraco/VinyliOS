@@ -7,7 +7,7 @@ build/
 Payload/
 dist/
 *.ipa
-build.log
+*.log
 
 .DS_Store
 xcuserdata/
