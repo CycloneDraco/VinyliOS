@@ -378,8 +378,8 @@ final class SpotifyLibrary: ObservableObject {
             albums += page.albums.filter { !known.contains($0.id) }
             total = page.total
             nextOffset += pageSize
-        } catch SpotifyAPIError.premiumRequired {
-            // A 403 here means the login lacks library access, not Premium.
+        } catch SpotifyAPIError.forbidden(let message) where message.localizedCaseInsensitiveContains("scope") {
+            // The login predates library access.
             error = "Spotify didn't allow Vinyl to read your library. Reconnect Spotify in Settings and try again."
         } catch {
             self.error = error.localizedDescription

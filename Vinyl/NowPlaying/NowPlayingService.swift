@@ -24,6 +24,8 @@ final class NowPlayingService: ObservableObject {
     private let spotifyAuth = SpotifyAuth.shared
     private let appleMusic = AppleMusicSource()
     private var spotify: PlayerSnapshot = .stopped
+    /// Spotify's current limits on remote control, from the last poll.
+    private var spotifyControl = SpotifyControl()
     private var spotifyTask: Task<Void, Never>?
     private var spotifyWake: CheckedContinuation<Void, Never>?
     private var wakeToken = 0
@@ -150,6 +152,7 @@ final class NowPlayingService: ObservableObject {
         if Date() < spotifyBackoffUntil { return spotifyBackoffUntil.timeIntervalSinceNow }
         do {
             let playback = try await SpotifyAPI.shared.playback()
+            spotifyControl = playback?.control ?? SpotifyControl()
             let next: PlayerSnapshot
             if let playback, let track = playback.track, !track.isAdvertisement {
                 next = PlayerSnapshot(
@@ -262,6 +265,11 @@ final class NowPlayingService: ObservableObject {
 
     func perform(_ command: PlaybackCommand) async {
         guard let source = now.track?.source ?? (spotifyAuth.isConnected ? .spotify : nil) else { return }
+        var command = command
+        if command == .toggle, source == .spotify {
+            // Decide play vs pause before the optimistic update below flips the state.
+            command = spotifyIsPlaying ? .pause : .play
+        }
         // Show the result right away; the next poll confirms it.
         applyOptimistically(command)
         switch source {
@@ -276,15 +284,13 @@ final class NowPlayingService: ObservableObject {
         case .spotify:
             do {
                 switch command {
-                case .toggle:
-                    if spotify.state == .playing { try await SpotifyAPI.shared.pause() } else { try await SpotifyAPI.shared.play() }
-                case .play: try await SpotifyAPI.shared.play()
+                case .toggle, .play: try await SpotifyAPI.shared.play() // (toggle is resolved above)
                 case .pause: try await SpotifyAPI.shared.pause()
                 case .next: try await SpotifyAPI.shared.next()
                 case .previous: try await SpotifyAPI.shared.previous()
                 }
             } catch {
-                notice = error.localizedDescription
+                notice = describe(error)
             }
             try? await Task.sleep(nanoseconds: 450_000_000)
             if spotifyTask != nil { pollSpotifySoon() } else { _ = await pollSpotify() }
@@ -299,7 +305,7 @@ final class NowPlayingService: ObservableObject {
             do {
                 try await SpotifyAPI.shared.play(contextURI: uri)
             } catch {
-                notice = error.localizedDescription
+                notice = describe(error)
                 return false
             }
             try? await Task.sleep(nanoseconds: 600_000_000)
@@ -326,9 +332,26 @@ final class NowPlayingService: ObservableObject {
             spotify.position = seconds
             spotify.positionDate = Date()
             recompute()
-            do { try await SpotifyAPI.shared.seek(to: seconds) } catch { notice = error.localizedDescription }
+            do { try await SpotifyAPI.shared.seek(to: seconds) } catch { notice = describe(error) }
             pollSpotifySoon()
         }
+    }
+
+    /// Spotify's own word wins: it disallows "pausing" exactly when paused and
+    /// "resuming" exactly when playing. Falls back to the last polled state.
+    private var spotifyIsPlaying: Bool {
+        if spotifyControl.disallows.contains("pausing") { return false }
+        if spotifyControl.disallows.contains("resuming") { return true }
+        return spotify.state == .playing
+    }
+
+    /// A Spotify "restriction violated" becomes the actual limit from the last poll.
+    private func describe(_ error: Error) -> String {
+        if case SpotifyAPIError.forbidden(let message) = error,
+           message.localizedCaseInsensitiveContains("restriction") {
+            return spotifyControl.explanation(device: spotify.device)
+        }
+        return error.localizedDescription
     }
 
     private func applyOptimistically(_ command: PlaybackCommand) {
