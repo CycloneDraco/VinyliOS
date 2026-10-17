@@ -644,7 +644,7 @@ struct SleeveLayout {
     }
 
     func needlePoint(angle: Double) -> CGPoint {
-        CGPoint(x: pivot.x + armLength * cos(angle), y: pivot.y + armLength * sin(angle))
+        CGPoint(x: pivot.x + armLength * CGFloat(cos(angle)), y: pivot.y + armLength * CGFloat(sin(angle)))
     }
 
     func needleRadius(angle: Double) -> CGFloat {

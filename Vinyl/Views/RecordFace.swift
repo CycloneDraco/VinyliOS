@@ -104,7 +104,7 @@ struct RecordFace: View {
                 // Area-uniform position across the surface.
                 let rr = sqrt(Double.random(in: 0.15...0.97, using: &rng)) * radius
                 let theta = Double.random(in: 0...(2 * .pi), using: &rng)
-                let p = CGPoint(x: center.x + rr * cos(theta), y: center.y + rr * sin(theta))
+                let p = CGPoint(x: center.x + rr * CGFloat(cos(theta)), y: center.y + rr * CGFloat(sin(theta)))
                 // Mostly fine specks, the odd big drop.
                 let size = radius * (Double.random(in: 0...1, using: &rng) < 0.06
                                      ? Double.random(in: 0.025...0.05, using: &rng)
@@ -117,7 +117,7 @@ struct RecordFace: View {
                     let d = size * Double.random(in: 1.2...2.4, using: &rng)
                     let a = Double.random(in: 0...(2 * .pi), using: &rng)
                     let s = size * Double.random(in: 0.2...0.45, using: &rng)
-                    ctx.fill(Path(ellipseIn: CGRect(x: p.x + d * cos(a) - s, y: p.y + d * sin(a) - s, width: s * 2, height: s * 2)),
+                    ctx.fill(Path(ellipseIn: CGRect(x: p.x + d * CGFloat(cos(a)) - s, y: p.y + d * CGFloat(sin(a)) - s, width: s * 2, height: s * 2)),
                              with: .color(tint.color.opacity(alpha)))
                 }
             }
@@ -132,9 +132,9 @@ struct RecordFace: View {
                 let outer = radius * Double.random(in: 0.55...1.0, using: &rng)
                 let width = Double.random(in: 0.004...0.02, using: &rng)
                 var streak = Path()
-                streak.move(to: CGPoint(x: center.x + inner * cos(theta - width), y: center.y + inner * sin(theta - width)))
-                streak.addLine(to: CGPoint(x: center.x + outer * cos(theta), y: center.y + outer * sin(theta)))
-                streak.addLine(to: CGPoint(x: center.x + inner * cos(theta + width), y: center.y + inner * sin(theta + width)))
+                streak.move(to: CGPoint(x: center.x + inner * CGFloat(cos(theta - width)), y: center.y + inner * CGFloat(sin(theta - width))))
+                streak.addLine(to: CGPoint(x: center.x + outer * CGFloat(cos(theta)), y: center.y + outer * CGFloat(sin(theta))))
+                streak.addLine(to: CGPoint(x: center.x + inner * CGFloat(cos(theta + width)), y: center.y + inner * CGFloat(sin(theta + width))))
                 streak.closeSubpath()
                 let tint = Double.random(in: 0...1, using: &rng) < 0.8 ? accent : .white
                 ctx.fill(streak, with: .color(tint.color.opacity(Double.random(in: 0.35...0.85, using: &rng))))
