@@ -14,7 +14,7 @@ enum SpotifyAPIError: LocalizedError {
         switch self {
         case .notConnected: return "Spotify isn't connected."
         case .premiumRequired: return "Spotify says this account needs Premium for play, pause and skip."
-        case .noActiveDevice: return "Nothing is playing on Spotify right now. Start a song in Spotify first."
+        case .noActiveDevice: return "Spotify isn't open on any device. Open Spotify on your phone, Mac or speaker, then try again."
         case .forbidden(let message): return "Spotify refused: \(message)"
         case .rateLimited: return "Spotify asked Vinyl to slow down; it'll catch up in a moment."
         case .http(let code, let message): return "Spotify returned an error (\(code))\(message.map { ": \($0)" } ?? ".")"
@@ -99,6 +99,7 @@ final class SpotifyAPI {
             print("Spotify device \(reply.device?.name ?? "-") type=\(control.deviceType ?? "-") restricted=\(control.deviceRestricted) disallows=\(control.disallows.sorted())")
         }
         #endif
+        if let id = reply.device?.id { lastDeviceID = id }
         return SpotifyPlayback(
             track: reply.item.map(Self.track(from:)),
             isPlaying: reply.is_playing,
@@ -109,12 +110,92 @@ final class SpotifyAPI {
         )
     }
 
-    func play() async throws { _ = try await send("PUT", "me/player/play") }
+    func play() async throws {
+        try await waking { deviceQuery in _ = try await self.send("PUT", "me/player/play", query: deviceQuery) }
+    }
 
-    /// Starts an album (or playlist) from its first track on the active device.
-    func play(contextURI: String) async throws {
-        let body = try JSONSerialization.data(withJSONObject: ["context_uri": contextURI])
-        _ = try await send("PUT", "me/player/play", body: body)
+    /// Starts an album (or playlist) from its first track or from `trackURI`.
+    func play(contextURI: String, startingAt trackURI: String? = nil) async throws {
+        var payload: [String: Any] = ["context_uri": contextURI]
+        if let trackURI { payload["offset"] = ["uri": trackURI] }
+        let body = try JSONSerialization.data(withJSONObject: payload)
+        try await waking { deviceQuery in _ = try await self.send("PUT", "me/player/play", query: deviceQuery, body: body) }
+    }
+
+    /// The device Spotify last reported playing on.
+    private var lastDeviceID: String?
+
+    /// Spotify drops a device from "active" after it sits paused for a while,
+    /// and then refuses to play ("no active device"). Like Spotify's own app,
+    /// wake the device that was last playing (or the first one available) and try again.
+    private func waking(_ command: ([URLQueryItem]) async throws -> Void) async throws {
+        do {
+            try await command([])
+        } catch SpotifyAPIError.noActiveDevice {
+            struct Devices: Decodable {
+                struct Device: Decodable { let id: String?; let is_restricted: Bool?; let is_active: Bool? }
+                let devices: [Device]
+            }
+            let (data, _) = try await send("GET", "me/player/devices")
+            let devices = (try? JSONDecoder().decode(Devices.self, from: data).devices) ?? []
+            let usable = devices.filter { $0.id != nil && $0.is_restricted != true }
+            guard let id = usable.first(where: { $0.id == lastDeviceID })?.id ?? usable.first?.id else {
+                throw SpotifyAPIError.noActiveDevice
+            }
+            try await command([URLQueryItem(name: "device_id", value: id)])
+        }
+    }
+
+    /// An album's details and full tracklist.
+    func album(uri: String) async throws -> AlbumDetail {
+        let id = String(uri.split(separator: ":").last ?? "")
+        struct Artist: Decodable { let name: String }
+        struct TrackItem: Decodable {
+            let uri: String
+            let name: String
+            let track_number: Int
+            let disc_number: Int
+            let duration_ms: Int
+            let artists: [Artist]
+        }
+        struct Page: Decodable { let items: [TrackItem]; let next: String? }
+        struct Album: Decodable {
+            let name: String
+            let artists: [Artist]
+            let release_date: String?
+            let tracks: Page
+        }
+        let (data, _) = try await send("GET", "albums/\(id)")
+        let album = try JSONDecoder().decode(Album.self, from: data)
+        var items = album.tracks.items
+        // Albums over 50 tracks come in pages.
+        var next = album.tracks.next
+        while next != nil, items.count < 500 {
+            let (more, _) = try await send("GET", "albums/\(id)/tracks", query: [
+                URLQueryItem(name: "limit", value: "50"),
+                URLQueryItem(name: "offset", value: String(items.count)),
+            ])
+            let page = try JSONDecoder().decode(Page.self, from: more)
+            items += page.items
+            next = page.items.isEmpty ? nil : page.next
+        }
+        let albumArtist = album.artists.map(\.name).joined(separator: ", ")
+        return AlbumDetail(
+            title: album.name,
+            artist: albumArtist,
+            year: album.release_date.map { String($0.prefix(4)) },
+            tracks: items.map { item in
+                let artist = item.artists.map(\.name).joined(separator: ", ")
+                return AlbumTrack(
+                    id: item.uri,
+                    number: item.track_number,
+                    disc: item.disc_number,
+                    title: item.name,
+                    artist: artist == albumArtist ? nil : artist,
+                    duration: Double(item.duration_ms) / 1000
+                )
+            }
+        )
     }
 
     /// One page of the user's saved albums, newest first.
@@ -216,7 +297,7 @@ final class SpotifyAPI {
     // MARK: Decoding
 
     private struct PlayerReply: Decodable {
-        struct Device: Decodable { let name: String?; let type: String?; let is_restricted: Bool? }
+        struct Device: Decodable { let id: String?; let name: String?; let type: String?; let is_restricted: Bool? }
         struct Actions: Decodable { let disallows: [String: Bool]? }
         struct Image: Decodable { let url: String; let width: Int? }
         struct Artist: Decodable { let name: String }

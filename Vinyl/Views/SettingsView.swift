@@ -129,11 +129,18 @@ struct SettingsView: View {
     }
 
     private var lookSection: some View {
-        Section("Sleeve") {
+        Section {
+            Picker("Record", selection: $prefs.vinylStyle) {
+                ForEach(VinylStyle.allCases) { Text($0.title).tag($0) }
+            }
             Picker("Background", selection: $prefs.sleeveBackground) {
                 ForEach(SleeveBackground.allCases) { Text($0.title).tag($0) }
             }
             Toggle("Show Song and Artist", isOn: $prefs.showTrackInfo)
+        } header: {
+            Text("Sleeve")
+        } footer: {
+            Text("Coloured records are pressed in each album's own colours. Match the Album picks a different pressing per album, like a real shelf. Tap the record to play or pause, turn it to move through the song, or pick up the tonearm and drop it where you want to listen.")
         }
     }
 

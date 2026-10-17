@@ -114,20 +114,49 @@ final class AppleMusicSource {
         refreshSoon()
     }
 
-    /// Queues an album from the Music library and plays it from track 1.
-    /// False when it's no longer in the library.
-    func playAlbum(persistentID: UInt64) -> Bool {
-        guard let player else { return false }
+    /// An album's songs from the Music library, in disc and track order.
+    static func albumItems(persistentID: UInt64) -> [MPMediaItem] {
         let query = MPMediaQuery.songs()
         query.addFilterPredicate(MPMediaPropertyPredicate(
             value: NSNumber(value: persistentID),
             forProperty: MPMediaItemPropertyAlbumPersistentID
         ))
-        guard let items = query.items, !items.isEmpty else { return false }
-        let ordered = items.sorted {
+        return (query.items ?? []).sorted {
             ($0.discNumber, $0.albumTrackNumber) < ($1.discNumber, $1.albumTrackNumber)
         }
-        player.setQueue(with: MPMediaItemCollection(items: ordered))
+    }
+
+    static func albumDetail(persistentID: UInt64) -> AlbumDetail? {
+        let items = albumItems(persistentID: persistentID)
+        guard let first = items.first else { return nil }
+        let albumArtist = first.albumArtist ?? first.artist ?? ""
+        return AlbumDetail(
+            title: first.albumTitle ?? "",
+            artist: albumArtist,
+            year: first.releaseDate.map { String(Calendar.current.component(.year, from: $0)) },
+            tracks: items.map { item in
+                AlbumTrack(
+                    id: "am:\(item.persistentID)",
+                    number: item.albumTrackNumber,
+                    disc: max(1, item.discNumber),
+                    title: item.title ?? "",
+                    artist: item.artist == albumArtist ? nil : item.artist,
+                    duration: item.playbackDuration
+                )
+            }
+        )
+    }
+
+    /// Queues an album from the Music library and plays it from track 1, or
+    /// from `trackID`. False when it's no longer in the library.
+    func playAlbum(persistentID: UInt64, startingAt trackID: String? = nil) -> Bool {
+        guard let player else { return false }
+        let items = Self.albumItems(persistentID: persistentID)
+        guard !items.isEmpty else { return false }
+        player.setQueue(with: MPMediaItemCollection(items: items))
+        if let trackID, let start = items.first(where: { "am:\($0.persistentID)" == trackID }) {
+            player.nowPlayingItem = start
+        }
         player.play()
         refreshSoon()
         return true

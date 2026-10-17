@@ -75,16 +75,18 @@ struct RootView: View {
         )
         .statusBarHidden(true)
         .persistentSystemOverlays(.hidden)
-        .sheet(item: $sheet) { which in
-            Group {
-                switch which {
-                case .settings: SettingsView()
-                case .crate: CrateView()
-                }
-            }
-            .environmentObject(prefs)
-            .environmentObject(nowPlaying)
-            .environmentObject(spotify)
+        .sheet(item: presented(.settings)) { _ in
+            SettingsView()
+                .environmentObject(prefs)
+                .environmentObject(nowPlaying)
+                .environmentObject(spotify)
+        }
+        // The shelf gets the whole screen.
+        .fullScreenCover(item: presented(.crate)) { _ in
+            CrateView()
+                .environmentObject(prefs)
+                .environmentObject(nowPlaying)
+                .environmentObject(spotify)
         }
         .onAppear {
             applyPhase(scenePhase)
@@ -105,6 +107,10 @@ struct RootView: View {
         } else {
             SleeveSceneView()
         }
+    }
+
+    private func presented(_ kind: Sheet) -> Binding<Sheet?> {
+        Binding(get: { sheet == kind ? kind : nil }, set: { sheet = $0 })
     }
 
     private func applyPhase(_ phase: ScenePhase) {

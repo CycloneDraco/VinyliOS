@@ -53,14 +53,40 @@ enum LabelStyle: String, CaseIterable, Identifiable {
 }
 
 enum SleeveBackground: String, CaseIterable, Identifiable {
-    case cover, light, dark
+    case album, cover, light, dark
     var id: String { rawValue }
     var title: String {
         switch self {
+        case .album: return "Album Colour"
         case .cover: return "Blurred Cover"
         case .light: return "Light"
         case .dark: return "Dark"
         }
+    }
+}
+
+/// The pressing: what the record itself is made of, tinted from the cover.
+enum VinylStyle: String, CaseIterable, Identifiable {
+    case automatic, translucent, splatter, burst, classic
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .automatic: return "Match the Album"
+        case .translucent: return "Clear Colour"
+        case .splatter: return "Splatter"
+        case .burst: return "Starburst"
+        case .classic: return "Classic Black"
+        }
+    }
+
+    /// `.automatic` picks a pressing per album, so a shelf of records varies
+    /// the way a real one does; the choice is stable for each album.
+    func resolved(for palette: AlbumPalette, albumKey: String) -> VinylStyle {
+        guard self == .automatic else { return self }
+        if palette.colorfulness < 0.12 { return .translucent }
+        let options: [VinylStyle] = [.translucent, .splatter, .burst, .splatter]
+        let hash = albumKey.utf8.reduce(UInt32(2166136261)) { ($0 ^ UInt32($1)) &* 16777619 }
+        return options[Int(hash % UInt32(options.count))]
     }
 }
 
@@ -107,6 +133,7 @@ final class Preferences: ObservableObject {
     @Published var sceneSizes: [String: Double] { didSet { defaults.set(sceneSizes, forKey: Keys.sceneSizes) } }
     @Published var labelStyle: LabelStyle { didSet { defaults.set(labelStyle.rawValue, forKey: Keys.labelStyle) } }
     @Published var sleeveBackground: SleeveBackground { didSet { defaults.set(sleeveBackground.rawValue, forKey: Keys.background) } }
+    @Published var vinylStyle: VinylStyle { didSet { defaults.set(vinylStyle.rawValue, forKey: Keys.vinylStyle) } }
     @Published var showTrackInfo: Bool { didSet { defaults.set(showTrackInfo, forKey: Keys.trackInfo) } }
     @Published var spinWhenIdle: Bool { didSet { defaults.set(spinWhenIdle, forKey: Keys.idleSpin) } }
 
@@ -149,7 +176,8 @@ final class Preferences: ObservableObject {
         scene = VinylScene(rawValue: defaults.string(forKey: Keys.scene) ?? "") ?? .sleeve
         sceneSizes = (defaults.dictionary(forKey: Keys.sceneSizes) ?? [:]).compactMapValues { ($0 as? NSNumber)?.doubleValue }
         labelStyle = LabelStyle(rawValue: defaults.string(forKey: Keys.labelStyle) ?? "") ?? .label
-        sleeveBackground = SleeveBackground(rawValue: defaults.string(forKey: Keys.background) ?? "") ?? .cover
+        sleeveBackground = SleeveBackground(rawValue: defaults.string(forKey: Keys.background) ?? "") ?? .album
+        vinylStyle = VinylStyle(rawValue: defaults.string(forKey: Keys.vinylStyle) ?? "") ?? .automatic
         showTrackInfo = defaults.bool(forKey: Keys.trackInfo)
         spinWhenIdle = defaults.bool(forKey: Keys.idleSpin)
         keepAwake = defaults.bool(forKey: Keys.keepAwake)
@@ -167,6 +195,7 @@ final class Preferences: ObservableObject {
         static let sceneSizes = "sceneSizes"
         static let labelStyle = "labelStyle"
         static let background = "sleeveBackground"
+        static let vinylStyle = "vinylStyle"
         static let trackInfo = "showTrackInfo"
         static let idleSpin = "spinWhenIdle"
         static let keepAwake = "keepAwake"

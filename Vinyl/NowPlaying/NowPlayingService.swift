@@ -270,6 +270,12 @@ final class NowPlayingService: ObservableObject {
             // Decide play vs pause before the optimistic update below flips the state.
             command = spotifyIsPlaying ? .pause : .play
         }
+        if source == .spotify {
+            // Spotify refuses play while playing and pause while paused, so
+            // asking for the state it's already in is simply done.
+            if command == .play && spotifyIsPlaying { return }
+            if command == .pause && !spotifyIsPlaying { return }
+        }
         // Show the result right away; the next poll confirms it.
         applyOptimistically(command)
         switch source {
@@ -297,13 +303,22 @@ final class NowPlayingService: ObservableObject {
         }
     }
 
-    /// Plays a whole album from track 1. `uri` is a `Track.albumURI`.
-    /// Returns false (and sets `notice`) when it couldn't.
+    /// An album's tracklist. `uri` is a `Track.albumURI`.
+    func albumDetail(uri: String) async throws -> AlbumDetail? {
+        if uri.hasPrefix("spotify:") { return try await SpotifyAPI.shared.album(uri: uri) }
+        if uri.hasPrefix("am-album:"), let id = UInt64(uri.dropFirst("am-album:".count)) {
+            return AppleMusicSource.albumDetail(persistentID: id)
+        }
+        return nil
+    }
+
+    /// Plays a whole album from track 1, or from `trackID` (an `AlbumTrack.id`).
+    /// `uri` is a `Track.albumURI`. Returns false (and sets `notice`) when it couldn't.
     @discardableResult
-    func playAlbum(uri: String) async -> Bool {
+    func playAlbum(uri: String, startingAt trackID: String? = nil) async -> Bool {
         if uri.hasPrefix("spotify:") {
             do {
-                try await SpotifyAPI.shared.play(contextURI: uri)
+                try await SpotifyAPI.shared.play(contextURI: uri, startingAt: trackID)
             } catch {
                 notice = describe(error)
                 return false
@@ -314,7 +329,7 @@ final class NowPlayingService: ObservableObject {
         }
         if uri.hasPrefix("am-album:"), let id = UInt64(uri.dropFirst("am-album:".count)) {
             if !appleMusic.isRunning { appleMusic.start() }
-            guard appleMusic.playAlbum(persistentID: id) else {
+            guard appleMusic.playAlbum(persistentID: id, startingAt: trackID) else {
                 notice = "That album isn't in your Apple Music library any more."
                 return false
             }

@@ -69,6 +69,25 @@ struct PlayerSnapshot: Equatable {
     }
 }
 
+/// An album's tracklist, from Spotify or the Music library.
+struct AlbumDetail: Equatable {
+    var title: String
+    var artist: String
+    var year: String?
+    var tracks: [AlbumTrack]
+}
+
+struct AlbumTrack: Identifiable, Equatable {
+    /// `spotify:track:…` or `am:<persistent ID>`, matching `Track.id`.
+    var id: String
+    var number: Int
+    var disc: Int
+    var title: String
+    /// Only when it differs from the album artist (features, compilations).
+    var artist: String?
+    var duration: TimeInterval
+}
+
 /// An album played in Vinyl: the 3D scenes' sleeve stack and the Crate.
 struct RecentAlbum: Codable, Equatable, Identifiable {
     var key: String

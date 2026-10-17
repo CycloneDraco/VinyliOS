@@ -15,9 +15,13 @@ There are no usage limits or accounts beyond your own Spotify login.
 ## Features
 
 - **Sleeve scene**, drawn natively and made for an always-on display: the cover
-  with the record overlapping it. The label takes its colour from the cover
-  (or switch to a picture disc), the record spins up and down like a real
-  platter, and the tonearm tracks the song and lifts when you pause.
+  with the record overlapping it, in a room tinted with the album's colours.
+  Each album gets its own translucent pressing (clear colour, splatter or
+  starburst, picked from the cover), or choose one, or classic black.
+- **Hands-on**: touch the record and it stops under your finger; turn it to
+  move through the song (one turn = 15 seconds), fling it and it carries on
+  before the motor takes back over. Pick up the tonearm and drop it on a
+  groove to play from there, or park it on its rest to pause.
 - **3D scenes from the Mac app**: Turntable (top-down), Listening Room and
   After Hours, with the recently played albums stacked beside the deck.
 - **Spotify on any device.** It shows what's playing on your phone, Mac,
@@ -25,9 +29,10 @@ There are no usage limits or accounts beyond your own Spotify login.
 - **Apple Music** playing in the Music app on the same device.
 - **Controls**: tap the screen to show them, tap the record to play or pause,
   swipe sideways to skip, and drag the progress bar to seek.
-- **Crate**: a searchable grid of the albums you've played in Vinyl (up to 300)
-  and your saved Spotify albums. Tap a cover to play that album from track 1.
-  Starting Spotify albums needs Premium.
+- **Crate**: a 3D shelf you flick through, Cover Flow style, of the albums
+  you've played in Vinyl (up to 300) and your saved Spotify albums, with
+  search. Tap the album in front to open it and see its songs; tap a song to
+  play from there. Starting Spotify albums needs Premium.
 - **Always-on display**: keeps the screen awake, dims for night-time, shows an
   optional clock, and nudges the image every few minutes to protect OLED
   screens from burn-in.
