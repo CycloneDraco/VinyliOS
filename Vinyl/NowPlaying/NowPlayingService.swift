@@ -220,6 +220,7 @@ final class NowPlayingService: ObservableObject {
         if chosen != now { now = chosen }
         resolveArtwork(for: chosen.track)
         LiveActivityController.shared.scheduleSync()
+        WidgetBridge.publish()
     }
 
     private func resolveArtwork(for track: Track?) {
@@ -240,6 +241,7 @@ final class NowPlayingService: ObservableObject {
             self.artworkPending = false
             if let file { self.remember(track, artworkFile: file) }
             LiveActivityController.shared.scheduleSync()
+            WidgetBridge.publish()
         }
     }
 
@@ -398,5 +400,7 @@ enum PlaybackCommandCenter {
         try? await Task.sleep(nanoseconds: 700_000_000)
         await service.refreshOnce()
         await LiveActivityController.shared.sync()
+        // Buttons on a widget land here too; redraw it with the result.
+        WidgetBridge.publishNow()
     }
 }

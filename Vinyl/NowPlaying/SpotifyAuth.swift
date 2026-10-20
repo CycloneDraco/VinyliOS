@@ -6,28 +6,6 @@ import os
 import UIKit
 #endif
 
-/// Values from the Spotify developer dashboard. The client ID isn't a secret;
-/// Vinyl uses PKCE, so there is no client secret anywhere in the app.
-enum SpotifyConfig {
-    static let clientID = "74488018efed4a05be59568ba4b2c1ab"
-    static let callbackScheme = "vinyl-ios"
-    static let redirectURI = "vinyl-ios://spotify-login-callback"
-    static let scopes = [
-        "user-read-playback-state",
-        "user-read-currently-playing",
-        "user-modify-playback-state",
-        "user-library-read", // saved albums, for the Crate
-    ]
-}
-
-struct SpotifyTokens: Codable {
-    var accessToken: String
-    var refreshToken: String
-    var expiresAt: Date
-    /// Space-separated scopes Spotify granted. Nil for logins from before 1.1.
-    var scope: String?
-}
-
 enum SpotifyAuthError: LocalizedError {
     case cancelled
     case denied(String)
@@ -61,11 +39,7 @@ final class SpotifyAuth: NSObject, ObservableObject {
         didSet {
             isConnected = tokens != nil
             canReadLibrary = tokens?.scope?.split(separator: " ").contains("user-library-read") ?? false
-            if let tokens, let data = try? JSONEncoder().encode(tokens) {
-                Keychain.write(data, for: "spotify")
-            } else {
-                Keychain.delete("spotify")
-            }
+            SpotifyTokenStore.save(tokens)
         }
     }
     private var refreshTask: Task<String, Error>?
@@ -74,7 +48,9 @@ final class SpotifyAuth: NSObject, ObservableObject {
 
     private override init() {
         super.init()
-        if let data = Keychain.read("spotify"), let saved = try? JSONDecoder().decode(SpotifyTokens.self, from: data) {
+        // Logins from before 1.3 move into the keychain group the widgets share.
+        Keychain.moveToSharedGroup("spotify")
+        if let saved = SpotifyTokenStore.load() {
             tokens = saved
             // (didSet doesn't run for assignments in the class's own initializer.)
             isConnected = true
@@ -156,7 +132,13 @@ final class SpotifyAuth: NSObject, ObservableObject {
 
     /// A non-expired access token, refreshing it first if needed.
     func validAccessToken() async throws -> String {
-        guard let tokens else { throw SpotifyAuthError.notConnected }
+        guard var tokens else { throw SpotifyAuthError.notConnected }
+        // A widget may have refreshed the login since; Spotify can replace
+        // the refresh token when it does, so always start from the newest.
+        if let stored = SpotifyTokenStore.load(), stored.expiresAt > tokens.expiresAt {
+            tokens = stored
+            self.tokens = stored
+        }
         if tokens.expiresAt.timeIntervalSinceNow > 60 { return tokens.accessToken }
         if let refreshTask { return try await refreshTask.value }
         let refreshToken = tokens.refreshToken

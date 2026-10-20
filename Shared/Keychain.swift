@@ -1,8 +1,12 @@
 import Foundation
 import Security
 
-/// Minimal generic-password storage for the Spotify tokens. Readable after
-/// first unlock so Live Activity buttons work while the phone is locked.
+/// Small items shared by the app and its widgets: the Spotify login and a
+/// note of what's playing. Both targets list one keychain access group (and
+/// only that one), which makes it the default group for everything written
+/// here; nothing needs to name it, so it keeps working after re-signing with
+/// another team. Readable after first unlock, so widgets and Live Activity
+/// buttons work while the device is locked.
 enum Keychain {
     private static let service = "io.github.cyclonedraco.vinyl.ios"
 
@@ -20,20 +24,17 @@ enum Keychain {
     }
 
     static func write(_ data: Data, for account: String) {
-        let match: [CFString: Any] = [
+        // Delete-then-add (rather than update) so the item always lands in
+        // the default, shared group, even if an older copy lived elsewhere.
+        delete(account)
+        let item: [CFString: Any] = [
             kSecClass: kSecClassGenericPassword,
             kSecAttrService: service,
             kSecAttrAccount: account,
-        ]
-        let attributes: [CFString: Any] = [
             kSecValueData: data,
             kSecAttrAccessible: kSecAttrAccessibleAfterFirstUnlock,
         ]
-        if SecItemUpdate(match as CFDictionary, attributes as CFDictionary) == errSecItemNotFound {
-            var add = match
-            attributes.forEach { add[$0.key] = $0.value }
-            SecItemAdd(add as CFDictionary, nil)
-        }
+        SecItemAdd(item as CFDictionary, nil)
     }
 
     static func delete(_ account: String) {
@@ -43,5 +44,12 @@ enum Keychain {
             kSecAttrAccount: account,
         ]
         SecItemDelete(query as CFDictionary)
+    }
+
+    /// Before 1.3 items lived in the app's private group, out of the widgets'
+    /// reach. Rewriting moves them into the shared one.
+    static func moveToSharedGroup(_ account: String) {
+        guard let data = read(account) else { return }
+        write(data, for: account)
     }
 }

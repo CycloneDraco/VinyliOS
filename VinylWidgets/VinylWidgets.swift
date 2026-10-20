@@ -8,6 +8,7 @@ import WidgetKit
 struct VinylWidgetsBundle: WidgetBundle {
     var body: some Widget {
         NowPlayingLiveActivity()
+        NowPlayingWidget()
     }
 }
 

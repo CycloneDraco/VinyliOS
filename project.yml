@@ -10,8 +10,8 @@ options:
 settings:
   base:
     SWIFT_VERSION: "5.0"
-    MARKETING_VERSION: "1.2.0"
-    CURRENT_PROJECT_VERSION: "3"
+    MARKETING_VERSION: "1.3.0"
+    CURRENT_PROJECT_VERSION: "4"
     IPHONEOS_DEPLOYMENT_TARGET: "17.0"
     TARGETED_DEVICE_FAMILY: "1,2"
     CODE_SIGN_STYLE: Automatic
@@ -54,6 +54,13 @@ targets:
           - UIInterfaceOrientationLandscapeRight
         NSSupportsLiveActivities: true
         NSAppleMusicUsageDescription: Vinyl shows the song playing in Apple Music and lets you play, pause and skip it.
+    # The shared keychain group is the only one listed, so it's the default
+    # for every keychain item the app and widgets write.
+    entitlements:
+      path: Entitlements/Vinyl.entitlements
+      properties:
+        keychain-access-groups:
+          - $(AppIdentifierPrefix)io.github.cyclonedraco.vinyl.ios.shared
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: io.github.cyclonedraco.vinyl.ios
@@ -75,6 +82,11 @@ targets:
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    entitlements:
+      path: Entitlements/VinylWidgets.entitlements
+      properties:
+        keychain-access-groups:
+          - $(AppIdentifierPrefix)io.github.cyclonedraco.vinyl.ios.shared
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: io.github.cyclonedraco.vinyl.ios.widgets

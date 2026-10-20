@@ -15,6 +15,7 @@ struct SettingsView: View {
                 if prefs.scene == .sleeve { lookSection }
                 displaySection
                 liveActivitySection
+                widgetSection
                 Section {
                     Picker("Energy", selection: $prefs.energy) {
                         ForEach(EnergyMode.allCases) { Text($0.title).tag($0) }
@@ -178,6 +179,16 @@ struct SettingsView: View {
             } else {
                 Text("Live Activities aren't available on this device, or they're turned off for Vinyl in Settings. On iPad, Vinyl's full-screen display does the same job.")
             }
+        }
+    }
+
+    private var widgetSection: some View {
+        Section {
+            Toggle("Spin the Record in Widgets", isOn: $prefs.widgetSpin)
+        } header: {
+            Text("Widgets")
+        } footer: {
+            Text("Add Vinyl from the widget gallery on your Home Screen or Lock Screen. Spinning keeps the record turning while music plays; it uses a little more battery, and iOS may slow it down when the battery is low.")
         }
     }
 

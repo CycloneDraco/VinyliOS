@@ -106,7 +106,14 @@ struct AlbumPalette: Equatable {
 
     /// Reads a cover from disk and finds its palette. Runs in ~2 ms on a 32 px thumbnail.
     static func extract(fromFile url: URL) -> AlbumPalette? {
-        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
+        CGImageSourceCreateWithURL(url as CFURL, nil).flatMap(extract(from:))
+    }
+
+    static func extract(fromData data: Data) -> AlbumPalette? {
+        CGImageSourceCreateWithData(data as CFData, nil).flatMap(extract(from:))
+    }
+
+    private static func extract(from source: CGImageSource) -> AlbumPalette? {
         let options: [CFString: Any] = [
             kCGImageSourceCreateThumbnailFromImageAlways: true,
             kCGImageSourceThumbnailMaxPixelSize: 32,

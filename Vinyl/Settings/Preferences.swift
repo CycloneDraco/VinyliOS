@@ -46,11 +46,6 @@ enum VinylScene: String, CaseIterable, Identifiable {
     var defaultSize: Double { self == .turntable ? 0.55 : 0.2 }
 }
 
-enum LabelStyle: String, CaseIterable, Identifiable {
-    case label, picture
-    var id: String { rawValue }
-    var title: String { self == .label ? "Printed Label" : "Picture Disc" }
-}
 
 enum SleeveBackground: String, CaseIterable, Identifiable {
     case album, cover, light, dark
@@ -65,30 +60,6 @@ enum SleeveBackground: String, CaseIterable, Identifiable {
     }
 }
 
-/// The pressing: what the record itself is made of, tinted from the cover.
-enum VinylStyle: String, CaseIterable, Identifiable {
-    case automatic, translucent, splatter, burst, classic
-    var id: String { rawValue }
-    var title: String {
-        switch self {
-        case .automatic: return "Match the Album"
-        case .translucent: return "Clear Colour"
-        case .splatter: return "Splatter"
-        case .burst: return "Starburst"
-        case .classic: return "Classic Black"
-        }
-    }
-
-    /// `.automatic` picks a pressing per album, so a shelf of records varies
-    /// the way a real one does; the choice is stable for each album.
-    func resolved(for palette: AlbumPalette, albumKey: String) -> VinylStyle {
-        guard self == .automatic else { return self }
-        if palette.colorfulness < 0.12 { return .translucent }
-        let options: [VinylStyle] = [.translucent, .splatter, .burst, .splatter]
-        let hash = albumKey.utf8.reduce(UInt32(2166136261)) { ($0 ^ UInt32($1)) &* 16777619 }
-        return options[Int(hash % UInt32(options.count))]
-    }
-}
 
 enum SourcePreference: String, CaseIterable, Identifiable {
     case automatic, spotify, appleMusic
@@ -133,7 +104,7 @@ final class Preferences: ObservableObject {
     @Published var sceneSizes: [String: Double] { didSet { defaults.set(sceneSizes, forKey: Keys.sceneSizes) } }
     @Published var labelStyle: LabelStyle { didSet { defaults.set(labelStyle.rawValue, forKey: Keys.labelStyle) } }
     @Published var sleeveBackground: SleeveBackground { didSet { defaults.set(sleeveBackground.rawValue, forKey: Keys.background) } }
-    @Published var vinylStyle: VinylStyle { didSet { defaults.set(vinylStyle.rawValue, forKey: Keys.vinylStyle) } }
+    @Published var vinylStyle: VinylStyle { didSet { defaults.set(vinylStyle.rawValue, forKey: Keys.vinylStyle); WidgetBridge.publish() } }
     @Published var showTrackInfo: Bool { didSet { defaults.set(showTrackInfo, forKey: Keys.trackInfo) } }
     @Published var spinWhenIdle: Bool { didSet { defaults.set(spinWhenIdle, forKey: Keys.idleSpin) } }
 
@@ -144,6 +115,7 @@ final class Preferences: ObservableObject {
     /// Nudges the scene a few points every few minutes so OLED screens don't burn in.
     @Published var pixelShift: Bool { didSet { defaults.set(pixelShift, forKey: Keys.pixelShift) } }
 
+    @Published var widgetSpin: Bool { didSet { defaults.set(widgetSpin, forKey: Keys.widgetSpin); WidgetBridge.publish() } }
     @Published var liveActivity: Bool { didSet { defaults.set(liveActivity, forKey: Keys.liveActivity) } }
     @Published var source: SourcePreference { didSet { defaults.set(source.rawValue, forKey: Keys.source) } }
     @Published var appleMusicEnabled: Bool { didSet { defaults.set(appleMusicEnabled, forKey: Keys.appleMusic) } }
@@ -185,6 +157,7 @@ final class Preferences: ObservableObject {
         showClock = defaults.bool(forKey: Keys.clock)
         pixelShift = defaults.bool(forKey: Keys.pixelShift)
         liveActivity = defaults.bool(forKey: Keys.liveActivity)
+        widgetSpin = defaults.bool(forKey: Keys.widgetSpin)
         source = SourcePreference(rawValue: defaults.string(forKey: Keys.source) ?? "") ?? .automatic
         appleMusicEnabled = defaults.bool(forKey: Keys.appleMusic)
         energy = EnergyMode(rawValue: defaults.string(forKey: Keys.energy) ?? "") ?? .automatic
@@ -203,6 +176,7 @@ final class Preferences: ObservableObject {
         static let clock = "showClock"
         static let pixelShift = "pixelShift"
         static let liveActivity = "liveActivity"
+        static let widgetSpin = "widgetSpin"
         static let source = "source"
         static let appleMusic = "appleMusicEnabled"
         static let energy = "energy"

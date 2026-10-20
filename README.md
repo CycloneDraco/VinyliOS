@@ -36,6 +36,10 @@ There are no usage limits or accounts beyond your own Spotify login.
 - **Always-on display**: keeps the screen awake, dims for night-time, shows an
   optional clock, and nudges the image every few minutes to protect OLED
   screens from burn-in.
+- **Widgets**: small to extra large on the Home Screen (with play, pause and
+  skip), plus Lock Screen and StandBy. They show the cover and its record in
+  the album's colours, check Spotify themselves while Vinyl is closed, and can
+  keep the record spinning (Settings → Widgets).
 - **Live Activity** (iPhone): record, title, a running progress bar, and
   play/pause/skip buttons on the Lock Screen and in the Dynamic Island.
 
