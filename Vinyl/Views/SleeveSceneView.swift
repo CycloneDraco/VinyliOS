@@ -21,6 +21,10 @@ struct SleeveSceneView: View {
     @State private var loadedArtworkKey = ""
     @State private var palette = AlbumPalette.neutral
     @State private var discImage: UIImage?
+    /// The record's drop shadow, drawn once per album. A shadow attached to the
+    /// spinning record would be re-blurred on every frame, though a turning
+    /// circle casts the same shadow throughout.
+    @State private var shadowImage: UIImage?
 
     @State private var spin = SpinModel()
     @State private var spinTimelineRunning = false
@@ -156,7 +160,8 @@ struct SleeveSceneView: View {
                 .fill(AngularGradient(
                     colors: [.clear, .white.opacity(0.14), .clear, .clear, .white.opacity(0.10), .clear, .clear],
                     center: .center, angle: .degrees(-40)))
-                .blendMode(.screen)
+                // (No .screen blend: for white highlights it gives exactly the
+                // same pixels as plain alpha, without an offscreen pass per frame.)
                 .allowsHitTesting(false)
 
             if let bubble = platterBubble {
@@ -168,7 +173,15 @@ struct SleeveSceneView: View {
         .frame(width: layout.disc, height: layout.disc)
         .animation(.easeInOut(duration: 0.5), value: discImage)
         .animation(.spring(response: 0.3, dampingFraction: 1), value: platterBubble == nil)
-        .shadow(color: .black.opacity(0.4), radius: layout.disc * 0.035, x: layout.disc * 0.01, y: layout.disc * 0.02)
+        .background {
+            if let shadowImage {
+                Image(uiImage: shadowImage)
+                    .resizable()
+                    .frame(width: layout.disc * (1 + Self.shadowBleed * 2), height: layout.disc * (1 + Self.shadowBleed * 2))
+                    .offset(x: layout.disc * 0.01, y: layout.disc * 0.02)
+                    .allowsHitTesting(false)
+            }
+        }
         .contentShape(Circle())
         .gesture(
             DragGesture(minimumDistance: 0)
@@ -299,7 +312,11 @@ struct SleeveSceneView: View {
         let dragging = arm != nil
         ZStack {
             TonearmGraphic(layout: layout, angle: angle, lifted: lifted)
-                .animation(dragging ? nil : .spring(response: 0.55, dampingFraction: 1), value: angle)
+                // Glide only for real moves (a new song, play/pause, a seek, a
+                // parked or dropped arm). Steady progress is about a point per
+                // second; springing it every tick kept the arm and its shadow
+                // animating half the time for no visible gain.
+                .animation(dragging ? nil : .spring(response: 0.55, dampingFraction: 1), value: armMoveKey)
                 .animation(.spring(response: 0.3, dampingFraction: 1), value: lifted)
             if dragging, let text = armBubble(layout, angle: angle) {
                 let head = layout.needlePoint(angle: angle)
@@ -318,6 +335,12 @@ struct SleeveSceneView: View {
                 .onEnded { _ in armEnded(layout) }
         )
         .accessibilityHidden(true)
+    }
+
+    /// Changes only on events that move the arm noticeably.
+    private var armMoveKey: String {
+        [nowPlaying.now.track?.id ?? "", nowPlaying.now.state.rawValue, String(armParked),
+         String(pendingSeek?.position ?? -1), String(arm == nil), String(platter == nil)].joined(separator: "|")
     }
 
     private func armPose(_ layout: SleeveLayout, date: Date) -> (Double, Bool) {
@@ -515,15 +538,21 @@ struct SleeveSceneView: View {
 
     private func discRenderKey(_ layout: SleeveLayout) -> String {
         let track = nowPlaying.now.track
+        // A picture disc shows no text, so it needn't be redrawn for every
+        // song on the same album.
+        let printed = prefs.labelStyle == .label
         return [
             "\(Int(layout.disc / 8))",
             prefs.labelStyle.rawValue,
             resolvedStyle.rawValue,
             loadedArtworkKey,
-            track?.title ?? "",
-            track?.artist ?? "",
+            printed ? track?.title ?? "" : "",
+            printed ? track?.artist ?? "" : "",
         ].joined(separator: "|")
     }
+
+    /// Margin around the disc for its shadow, as a fraction of the diameter.
+    private static let shadowBleed: CGFloat = 0.1
 
     private func renderDisc(diameter: CGFloat) {
         guard diameter > 10 else { return }
@@ -542,7 +571,30 @@ struct SleeveSceneView: View {
         renderer.scale = displayScale
         renderer.isOpaque = false
         // Rendered once per album; spinning just rotates this image.
-        discImage = renderer.uiImage
+        let disc = renderer.uiImage
+        discImage = disc
+
+        // The shadow exactly as `.shadow` draws it (the disc's own outline,
+        // blacked out, faded and blurred), but computed once. It's soft, so
+        // 1× resolution is plenty.
+        if let disc {
+            let radius = diameter * 0.035
+            let side = diameter * (1 + Self.shadowBleed * 2)
+            let shadow = ImageRenderer(content:
+                Image(uiImage: disc)
+                    .resizable()
+                    .frame(width: diameter, height: diameter)
+                    .colorMultiply(.black)
+                    .opacity(0.4)
+                    .blur(radius: radius)
+                    .frame(width: side, height: side)
+            )
+            shadow.scale = 1
+            shadow.isOpaque = false
+            shadowImage = shadow.uiImage
+        } else {
+            shadowImage = nil
+        }
     }
 
     private static let idleCover: UIImage = {

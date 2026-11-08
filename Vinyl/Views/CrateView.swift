@@ -34,14 +34,23 @@ struct CrateView: View {
 
     @State private var shelf: Shelf = .played
     @State private var search = ""
-    @StateObject private var motion = ShelfMotion()
+    // Held without observing it: the shelf moves up to 120 times a second, and
+    // only the carousel needs that. This view hears about it when the album in
+    // front changes.
+    @State private var motion = ShelfMotion()
+    /// The shelf's albums, rebuilt only when the source, search or library changes.
+    @State private var items: [CrateItem] = []
+    @State private var centeredIndex = 0
+    /// Trails `centeredIndex` until the shelf settles, so a fast flick doesn't
+    /// start a full-screen blur for every album it passes.
+    @State private var backdropItem: CrateItem?
     @State private var openItem: CrateItem?
     @Namespace private var covers
 
     var body: some View {
         NavigationStack {
             ZStack {
-                Backdrop(item: centeredItem)
+                Backdrop(item: backdropItem)
                 content
                 if let openItem {
                     AlbumDetailView(item: openItem, namespace: covers, close: closeDetail, played: { dismiss() })
@@ -70,10 +79,23 @@ struct CrateView: View {
             .safeAreaInset(edge: .bottom) { noticeBanner }
         }
         .preferredColorScheme(.dark)
-        .onChange(of: shelf) { _, _ in motion.jump(to: 0) }
-        .onChange(of: search) { _, _ in motion.jump(to: 0) }
-        .onChange(of: items.count) { _, count in motion.count = count }
-        .onAppear { motion.count = items.count }
+        .onAppear {
+            motion.onCenterChange = { index in centeredIndex = index }
+            rebuildItems(resetPosition: false)
+        }
+        .onChange(of: shelf) { _, _ in rebuildItems(resetPosition: true) }
+        .onChange(of: search) { _, _ in rebuildItems(resetPosition: true) }
+        .onChange(of: nowPlaying.recent) { _, _ in if shelf == .played { rebuildItems(resetPosition: false) } }
+        .onChange(of: library.albums) { _, _ in if shelf == .library { rebuildItems(resetPosition: false) } }
+        .onChange(of: centeredIndex) { _, index in
+            if shelf == .library, index > items.count - 8 { Task { await library.loadMore() } }
+        }
+        .task(id: centeredItem?.id) {
+            // Change the room's colour once the shelf comes to rest.
+            if backdropItem != nil { try? await Task.sleep(nanoseconds: 250_000_000) }
+            guard !Task.isCancelled else { return }
+            backdropItem = centeredItem
+        }
         .task(id: shelf) {
             if shelf == .library, spotify.canReadLibrary, library.albums.isEmpty { await library.loadMore() }
         }
@@ -88,7 +110,14 @@ struct CrateView: View {
 
     // MARK: Items
 
-    private var items: [CrateItem] {
+    private func rebuildItems(resetPosition: Bool) {
+        items = makeItems()
+        motion.count = items.count
+        if resetPosition { motion.jump(to: 0) }
+        centeredIndex = min(max(0, Int(motion.position.rounded())), max(0, items.count - 1))
+    }
+
+    private func makeItems() -> [CrateItem] {
         let all: [CrateItem]
         switch shelf {
         case .played:
@@ -106,15 +135,8 @@ struct CrateView: View {
         return all.filter { $0.title.localizedCaseInsensitiveContains(query) || $0.artist.localizedCaseInsensitiveContains(query) }
     }
 
-    private var centeredIndex: Int {
-        let list = items
-        guard !list.isEmpty else { return 0 }
-        return min(list.count - 1, max(0, Int(motion.position.rounded())))
-    }
-
     private var centeredItem: CrateItem? {
-        let list = items
-        return list.isEmpty ? nil : list[centeredIndex]
+        items.indices.contains(centeredIndex) ? items[centeredIndex] : nil
     }
 
     // MARK: Content
@@ -151,9 +173,6 @@ struct CrateView: View {
                     open: openDetail
                 )
                 .frame(maxHeight: .infinity)
-                .onChange(of: centeredIndex) { _, index in
-                    if shelf == .library, index > items.count - 8 { Task { await library.loadMore() } }
-                }
 
                 if let item = centeredItem {
                     caption(for: item)
@@ -273,8 +292,19 @@ struct CrateView: View {
 @MainActor
 final class ShelfMotion: NSObject, ObservableObject {
     /// Index of the album in front; fractional while moving.
-    @Published private(set) var position: CGFloat = 0
+    @Published private(set) var position: CGFloat = 0 {
+        didSet {
+            let index = min(max(0, Int(position.rounded())), max(0, count - 1))
+            if index != lastCenter {
+                lastCenter = index
+                onCenterChange?(index)
+            }
+        }
+    }
     var count = 0
+    /// Called when a different album comes to the front (not every frame).
+    var onCenterChange: ((Int) -> Void)?
+    private var lastCenter = 0
 
     private var velocity: CGFloat = 0 // albums per second
     private var target: CGFloat = 0
@@ -381,8 +411,11 @@ struct ShelfCarousel: View {
         GeometryReader { geo in
             let size = min(geo.size.height * 0.66, geo.size.width * 0.42, 460)
             let position = motion.position
-            let low = max(0, Int(position) - 7)
-            let high = min(items.count - 1, Int(position) + 8)
+            // Past the neighbours, albums sit 0.2 sleeves apart; build only as
+            // many as reach the screen edge (they fade out by 6.5 anyway).
+            let reach = min(6, Int((geo.size.width / 2 - size * 0.62) / (size * 0.2)) + 2)
+            let low = max(0, Int(position.rounded(.down)) - reach)
+            let high = min(items.count - 1, Int(position.rounded(.up)) + reach)
             ZStack {
                 if low <= high {
                     ForEach(low...high, id: \.self) { index in
@@ -459,6 +492,7 @@ struct ShelfCover: View {
     let playing: Bool
 
     var body: some View {
+        let bleed = size * 0.1 // room for the shadow inside the flattened layer
         VStack(spacing: 3) {
             sleeve
                 .shadow(color: .black.opacity(0.45), radius: size * 0.04, y: size * 0.025)
@@ -471,6 +505,28 @@ struct ShelfCover: View {
                 .accessibilityHidden(true)
         }
         .frame(width: size, height: size * 1.32 + 3, alignment: .top)
+        // Drawn once into a single layer: the shelf then only moves, turns and
+        // fades that layer, instead of re-blurring the shadow and re-masking
+        // the reflection of every album on every frame.
+        .padding(bleed)
+        .drawingGroup()
+        .padding(-bleed)
+        .overlay(alignment: .top) {
+            // Kept outside the flattened layer: it animates and uses a material.
+            if playing {
+                Image(systemName: "waveform")
+                    .symbolEffect(.variableColor.iterative)
+                    .font(.system(size: max(14, size * 0.05), weight: .bold))
+                    .padding(size * 0.03)
+                    .background(.ultraThinMaterial, in: Circle())
+                    .padding(size * 0.03)
+                    .frame(width: size, height: size, alignment: .bottomTrailing)
+            }
+        }
+        .accessibilityElement()
+        .accessibilityLabel("\(item.title) by \(item.artist)")
+        .accessibilityAddTraits(.isButton)
+        .accessibilityHint("Opens the album")
         .offset(y: size * 0.16)
     }
 
@@ -483,20 +539,6 @@ struct ShelfCover: View {
                 RoundedRectangle(cornerRadius: size * 0.012, style: .continuous)
                     .strokeBorder(LinearGradient(colors: [.white.opacity(0.35), .clear], startPoint: .top, endPoint: .center), lineWidth: 1)
             )
-            .overlay(alignment: .bottomTrailing) {
-                if playing {
-                    Image(systemName: "waveform")
-                        .symbolEffect(.variableColor.iterative)
-                        .font(.system(size: max(14, size * 0.05), weight: .bold))
-                        .padding(size * 0.03)
-                        .background(.ultraThinMaterial, in: Circle())
-                        .padding(size * 0.03)
-                }
-            }
-            .accessibilityElement()
-            .accessibilityLabel("\(item.title) by \(item.artist)")
-            .accessibilityAddTraits(.isButton)
-            .accessibilityHint("Opens the album")
     }
 }
 

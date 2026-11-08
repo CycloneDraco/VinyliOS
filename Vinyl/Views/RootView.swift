@@ -44,12 +44,15 @@ struct RootView: View {
                     .transition(.opacity.combined(with: .scale(scale: 0.97)))
             }
 
-            ControlsOverlay(visible: showControls,
-                            openCrate: { sheet = .crate },
-                            openSettings: { sheet = .settings },
-                            interacted: scheduleHide)
-            .opacity(showControls ? 1 : 0)
-            .allowsHitTesting(showControls)
+            // Only while shown: hidden, it still ticked its progress bar (and the
+            // blur behind it) twice a second.
+            if showControls {
+                ControlsOverlay(visible: true,
+                                openCrate: { sheet = .crate },
+                                openSettings: { sheet = .settings },
+                                interacted: scheduleHide)
+                .transition(.opacity)
+            }
 
             if let notice = nowPlaying.notice {
                 NoticeBanner(text: notice)
